@@ -1,0 +1,100 @@
+#include <ESP8266WiFi.h>
+//#include <ESPAsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include "NTPClient.h"
+#include "WiFiUdp.h"
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+AsyncWebServer server(80);
+
+const char* ssid = "vivo 1820";  //wifi ssid
+const char* password = "2004sk.krish";   //wifi password
+const char* PARAM_INPUT_1 = "input1";
+const long utcOffsetInSeconds = 19800;
+char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org", utcOffsetInSeconds);
+
+const char index_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE HTML><html><head>
+  <title>Smart Notice Board</title>
+  <meta name="viewport" content="width=device-width, initial-scale=5">
+<p> <font size="9" face="sans-serif"> <marquee> Smart Notice Board </marquee> </font> </p>
+  </head><body><center>
+  <form action="/get">
+    Enter Text to Display: <input type="text" name="input1">
+    <input type="submit" value="Send">
+  </form><br>
+
+</center></body></html>)rawliteral";
+
+void notFound(AsyncWebServerRequest *request) {
+  request->send(404, "text/plain", "Not found");
+}
+
+void setup() {
+  Serial.begin(115200);
+  lcd.init();
+  lcd.backlight();
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Smart Notice Board");
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  if (WiFi.waitForConnectResult() != WL_CONNECTED) {
+    Serial.println("WiFi Failed!");
+    return;
+  }
+  timeClient.begin();
+  Serial.println();
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.localIP());
+
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest * request) {
+    request->send_P(200, "text/html", index_html);
+  });
+
+  server.on("/get", HTTP_GET, [] (AsyncWebServerRequest * request) {
+    String message;
+    String inputParam;
+    if (request->hasParam(PARAM_INPUT_1)) {
+      message = request->getParam(PARAM_INPUT_1)->value();
+      inputParam = PARAM_INPUT_1;
+      lcd.clear();
+      lcd.setCursor(0, 0);
+
+      lcd.print(message);
+    }
+    else {
+      message = "No message sent";
+      inputParam = "none";
+    }
+    Serial.println(message);
+
+    request->send(200, "text/html", index_html);
+  });
+  server.onNotFound(notFound);
+  server.begin();
+
+
+}
+
+void loop() {
+  for (int positionCounter = 0; positionCounter < 29; positionCounter++) {
+    lcd.scrollDisplayLeft();
+    delay(1000);
+  }
+  timeClient.update();
+  lcd.setCursor(0, 1);
+  lcd.print(daysOfTheWeek[timeClient.getDay()]);
+  lcd.print(",");
+  lcd.print(timeClient.getHours());
+  lcd.print(":");
+  lcd.print(timeClient.getMinutes());
+  lcd.print(":");
+  lcd.println(timeClient.getSeconds());
+  delay(1000);
+
+}
